@@ -1,6 +1,15 @@
 import '../../helpers/iframeLoader.js';
 import axios from 'axios';
 import React, {Component} from 'react';
+import DOMHelper from '../../helpers/dom-helper';
+import EditorText from '../editor-text/editor-text';
+import Spinner from '../spinner/spinner';
+import Panel from '../panel/panel';
+import ChooseModal from '../choose-modal/choose-modal';
+import EditorMeta from '../editor-meta/editor-meta.js';
+import EditorImages from '../editor-images/editor-images.js';
+import UIkit from 'uikit';
+
 
 export default class Editor extends Component {
     constructor() {
@@ -8,151 +17,193 @@ export default class Editor extends Component {
         this.currentPage = "index.html";
         this.state = {
             pageList: [],
-            newPageName: ''
+            backupsList: [],
+            newPageName: '',
+            loading: true
         }
 
-        this.createNewPage = this.createNewPage.bind(this);
+        this.save = this.save.bind(this);
+        this.meta = this.meta.bind(this);
+        this.isLoading = this.isLoading.bind(this);
+        this.isLoaded = this.isLoaded.bind(this);
+        this.init = this.init.bind(this);
+        this.restoreBackup = this.restoreBackup.bind(this);
     }
 
     componentDidMount() {
-        this.init(this.currentPage);
+        this.init(null, this.currentPage);
     }
 
-    init(page) {
+    init(e, page) {
+        if (e) {
+            e.preventDefault();
+        }
+
+        this.isLoading();
         this.iframe = document.querySelector('iframe');
-        this.open(page);
+        this.open(page, this.isLoaded);
         this.loadPageList();
+        this.loadBackupsList();
     }
 
-    open(page) {
+    open(page, cb) {
         //rnd нужен для того, чтобы сбросить кэширование страницы
         this.currentPage = page;
 
         axios.get(`../${page}?rnd=${Math.random()}`)
-             .then(res => this.parseStrToDOM(res.data))
-             .then(this.wrapTextNodes)
+             .then(res => DOMHelper.parseStrToDOM(res.data))
+             .then(DOMHelper.wrapTextNodes)
+             .then(DOMHelper.wrapImages)
              .then(dom => {
-                 this.virtualDOM = dom;
-                 return dom;
+                this.virtualDOM = dom;
+                return dom;
              })
-             .then(this.serializeDOMToString)
+             .then(DOMHelper.serializeDOMToString)
              .then(html => axios.post('./api/saveTempPage.php', {html}))
-             .then(() => this.iframe.load('../temp.html'))
-             .then(() => this.enableEditing());
+             .then(() => this.iframe.load('../vbsregw4rew43qtrf.html'))
+             .then(() => axios.post('./api/deleteTempPage.php'))
+             .then(() => this.enableEditing())
+             .then(() => this.injectStyles())
+             .then(cb);
+
+        this.loadBackupsList();
     }
 
-    save() {
+    async save() {
+        this.isLoading();
         const newDOM = this.virtualDOM.cloneNode(this.virtualDOM);
 
-        this.unwrapTextNodes(newDOM);
+        DOMHelper.unwrapTextNodes(newDOM);
+        DOMHelper.unwrapImages(newDOM);
 
-        const html = this.serializeDOMToString(newDOM);
+        const html = DOMHelper.serializeDOMToString(newDOM);
 
-        axios.post('./api/savePage.php', {pageName: this.currentPage, html: html});
+        await axios.post('./api/savePage.php', {pageName: this.currentPage, html: html})
+                    .then(() => this.showNotifications('Успешно сохранено', 'success'))
+                    .catch(() => this.showNotifications('Ошибка сохранения', 'warning'))
+                    .finally(this.isLoaded);
+
+        this.loadBackupsList();
     }
 
-    parseStrToDOM(str) {
-        const parser = new DOMParser();
-        return parser.parseFromString(str, 'text/html');
-    }
+    async meta(onSuccess, onError) {
+        console.log('meta edit');
+        // this.isLoading();
+        // const newDOM = this.virtualDOM.cloneNode(this.virtualDOM);
 
-    wrapTextNodes(dom) {
-        const body = dom.body;
-        let textNodes = [];
+        // DOMHelper.unwrapTextNodes(newDOM);
 
-        function recursy(element) {
-            element.childNodes.forEach(node => {
+        // const html = DOMHelper.serializeDOMToString(newDOM);
 
-                if(node.nodeName === "#text" && node.nodeValue.replace(/\s+/g, "").length > 0) {
-                    textNodes.push(node);
-                } else {
-                    recursy(node);
-                }
-            })
-        };
+        // await axios.post('./api/savePage.php', {pageName: this.currentPage, html: html})
+        //      .then(onSuccess)
+        //      .catch(onError)
+        //      .finally(this.isLoaded);
 
-        recursy(body);
-
-        textNodes.forEach((node, i) => {
-            const wrapper = dom.createElement('text-editor');
-            node.parentNode.replaceChild(wrapper, node);
-            wrapper.appendChild(node);
-            wrapper.setAttribute('nodeid', i);
-        });
-
-        return dom;
-    }
-
-    unwrapTextNodes(dom) {
-        dom.body.querySelectorAll('text-editor').forEach(element => {
-            element.parentNode.replaceChild(element.firstChild, element);
-        })
-    }
-
-    serializeDOMToString(dom) {
-        const serializer = new XMLSerializer();
-        return serializer.serializeToString(dom);
+        // this.loadBackupsList();
     }
 
     enableEditing() {
         this.iframe.contentDocument.body.querySelectorAll('text-editor').forEach(element => {
-            element.contentEditable = 'true';
-            element.addEventListener('input', () => {
-                this.onTextEdit(element);
-            })
+            const id = element.getAttribute('nodeid');
+            const virtualElement = this.virtualDOM.body.querySelector(`[nodeid="${id}"]`);
+
+            new EditorText(element, virtualElement);
+        });
+
+        this.iframe.contentDocument.body.querySelectorAll('[editableimgid]').forEach(element => {
+            const id = element.getAttribute('editableimgid');
+            const virtualElement = this.virtualDOM.body.querySelector(`[editableimgid="${id}"]`);
+
+            new EditorImages(element, virtualElement, this.isLoading, this.isLoaded, this.showNotifications);
         });
     }
 
-    onTextEdit(element) {
-        const id = element.getAttribute('nodeid');
-        this.virtualDOM.body.querySelector(`[nodeid="${id}"]`).innerHTML = element.innerHTML;
+    injectStyles() {
+        const style = this.iframe.contentDocument.createElement("style");
+        style.innerHTML = `
+            text-editor:hover {
+                outline: 3px solid orange;
+                outline-offset: 8px;
+            }
+            text-editor:focus {
+                outline: 3px solid red;
+                outline-offset: 8px;
+            }
+            [editableimgid]:hover {
+                outline: 3px solid orange;
+                outline-offset: 8px;
+            }
+        `;
+
+        this.iframe.contentDocument.head.appendChild(style);
     }
 
     loadPageList() {
-        axios.get('./api')
+        axios.get('./api/pageList.php')
              .then(res => this.setState({pageList: res.data}))
     }
 
-    createNewPage() {
-        axios.post('./api/createNewPage.php', {"name": this.state.newPageName})
-             .then(this.loadPageList())
-             .catch(() => alert('Страница уже существует!'));
+    loadBackupsList() {
+        axios.get('./backups/backups.json')
+             .then(res => this.setState({backupsList: res.data.filter(backup => {
+                return backup.page === this.currentPage;
+             })}))
     }
 
-    deletePage(page) {
-        axios.post('./api/deletePage.php', {"name": page})
-             .then(this.loadPageList())
-             .catch(() => alert('Страница не существует!'));
+    restoreBackup(e, backup) {
+        if (e) {
+            e.preventDefault();
+        }
+
+        UIkit.modal.confirm("Вы хотите востановить страницу из резервной копии? Все несохраненные данные будт удалены!", {labels: {ok: 'Востановить', cancel: 'Отмена'}})
+                   .then(() => {
+                       this.isLoading();
+                       return axios.post('.api/restoreBackup.php', {"page": this.currentPage, "file": backup});
+                   })
+                   .then(() => {
+                       this.open(this.currentPage, this.isLoaded);
+                   })
     }
+
+    isLoading() {
+        this.setState({
+            loading: true
+        })
+    }
+
+    isLoaded() {
+        this.setState({
+            loading: false
+        })
+    }
+
+    showNotifications(message, status) {
+        UIkit.notification({message, status});
+    }
+
 
     render() {
-        // const {pageList} = this.state;
-        // const pages = pageList.map((page, i) => {
-        //     return (
-        //         <h1 key={i}>{page}
-        //             <a
-        //                 href="#"
-        //                 onClick={() => this.deletePage(page)}
-        //             >x</a>
-        //         </h1>
-        //     )
-        // });
+        const {loading, pageList, backupsList} = this.state;
+        const modal = true;
+        let spinner;
+
+        loading ? spinner = <Spinner active/> : spinner = <Spinner />;
 
         return (
             <>
-                <button onClick={() => this.save()}>Click</button>
-                <iframe src={this.currentPage} frameBorder="0"></iframe>
+                <iframe src="" frameBorder="0"></iframe>
+                <input id="img-upload" type="file" accept="image/*" style={{display: 'none'}}/>
+
+                {spinner}
+
+                <Panel save = {this.save} meta = {this.meta} />
+
+                <ChooseModal modal={modal} target={'modal-open'} data={pageList} redirect={this.init}/>
+                <ChooseModal modal={modal} target={'modal-backup'} data={backupsList} redirect={this.restoreBackup}/>
 
 
             </>
-            // <>
-            //     <input
-            //         onChange={(e) => {this.setState({newPageName: e.target.value})}}
-            //         type="text"
-            //     />
-            //     <button onClick={this.createNewPage}>Создать страницу</button>
-            //     {pages}
-            // </>
         )
     }
 }
