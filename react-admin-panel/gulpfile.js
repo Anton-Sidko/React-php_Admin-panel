@@ -1,8 +1,10 @@
 const gulp = require('gulp');
 const webpack = require('webpack-stream');
 const sass = require('gulp-sass')(require('sass'));
+const cleanCSS = require("gulp-clean-css");
 
 const dist = '/Users/macuser/work_wrap/workspace/zzz_education/React_php_Course-3/test-site/admin';
+const prod = "./build/";
 
 gulp.task('copy-html', () => {
     return gulp.src('./app/src/index.html')
@@ -51,6 +53,11 @@ gulp.task('copy-api', () => {
     return gulp.src('./app/api/**/*.*')
                 .pipe(gulp.dest(dist + "/api"))
 });
+gulp.task("copy-access", () => {
+    return gulp.src("./app/api/**/.*")
+                .pipe(gulp.dest(dist + "/api"));
+});
+
 
 gulp.task('copy-assets', () => {
     return gulp.src('./app/assets/**/*.*')
@@ -65,6 +72,49 @@ gulp.task('watch', () => {
     gulp.watch('./app/assets/**/*.*', gulp.parallel('copy-assets'));
 });
 
-gulp.task('build', gulp.parallel('copy-html', 'build-js', 'build-sass', 'copy-api', 'copy-assets'));
+gulp.task("build", gulp.parallel("copy-html", "copy-assets", "copy-api", "build-sass", "build-js", "copy-access"));
+
+gulp.task("prod", () => {
+    gulp.src("./app/src/index.html")
+        .pipe(gulp.dest(prod));
+    gulp.src("./app/api/**/*.*")
+        .pipe(gulp.dest(prod + "/api"));
+    gulp.src("./app/assets/**/*.*")
+        .pipe(gulp.dest(prod + "/assets"));
+
+    gulp.src("./app/src/main.js")
+        .pipe(webpack({
+            mode: 'production',
+            output: {
+                filename: 'script.js'
+            },
+            module: {
+                rules: [
+                  {
+                    test: /\.m?js$/,
+                    exclude: /(node_modules|bower_components)/,
+                    use: {
+                      loader: 'babel-loader',
+                      options: {
+                        presets: [['@babel/preset-env', {
+                            debug: false,
+                            corejs: 3,
+                            useBuiltIns: "usage"
+                        }],
+                        "@babel/react"]
+                      }
+                    }
+                  }
+                ]
+              }
+        }))
+        .pipe(gulp.dest(prod));
+
+    return gulp.src("./app/scss/style.scss")
+        .pipe(sass().on('error', sass.logError))
+        .pipe(cleanCSS())
+        .pipe(gulp.dest(prod));
+});
 
 gulp .task('default', gulp.parallel('build', 'watch'));
+

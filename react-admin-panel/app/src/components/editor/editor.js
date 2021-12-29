@@ -9,6 +9,7 @@ import ChooseModal from '../choose-modal/choose-modal';
 import EditorMeta from '../editor-meta/editor-meta.js';
 import EditorImages from '../editor-images/editor-images.js';
 import UIkit from 'uikit';
+import Login from '../login/login.js';
 
 
 export default class Editor extends Component {
@@ -19,7 +20,10 @@ export default class Editor extends Component {
             pageList: [],
             backupsList: [],
             newPageName: '',
-            loading: true
+            loading: true,
+            auth: false,
+            loginError: false,
+            loginLengthError: false
         }
 
         this.save = this.save.bind(this);
@@ -28,10 +32,55 @@ export default class Editor extends Component {
         this.isLoaded = this.isLoaded.bind(this);
         this.init = this.init.bind(this);
         this.restoreBackup = this.restoreBackup.bind(this);
+        this.login = this.login.bind(this);
+        this.logout = this.logout.bind(this);
     }
 
     componentDidMount() {
-        this.init(null, this.currentPage);
+        this.checkAuth();
+    }
+
+    componentDidUpdate(prevProps, prevState) {
+        if (this.state.auth !== prevState.auth) {
+            this.init(null, this.currentPage);
+        }
+    }
+
+    checkAuth() {
+        axios
+            .get("./api/checkAuth.php")
+            .then(res => {
+                this.setState({
+                    auth: res.data.auth
+                })
+            })
+    }
+
+    login(password) {
+        if (password.length > 7) {
+            axios
+                .post("./api/login.php", {"password": password})
+                .then(res => {
+                    this.setState({
+                        auth: res.data.auth,
+                        loginError: !res.data.auth,
+                        loginLengthError: false
+                    })
+                })
+        } else {
+            this.setState({
+                loginError: false,
+                loginLengthError: true
+            })
+        }
+    }
+
+    logout() {
+        axios
+            .get('./api/logout.php')
+            .then(() => {
+                window.location.replace('/');
+            })
     }
 
     init(e, page) {
@@ -39,11 +88,13 @@ export default class Editor extends Component {
             e.preventDefault();
         }
 
-        this.isLoading();
-        this.iframe = document.querySelector('iframe');
-        this.open(page, this.isLoaded);
-        this.loadPageList();
-        this.loadBackupsList();
+        if (this.state.auth) {
+            this.isLoading();
+            this.iframe = document.querySelector('iframe');
+            this.open(page, this.isLoaded);
+            this.loadPageList();
+            this.loadBackupsList();
+        }
     }
 
     open(page, cb) {
@@ -184,11 +235,15 @@ export default class Editor extends Component {
 
 
     render() {
-        const {loading, pageList, backupsList} = this.state;
+        const {loading, pageList, backupsList, auth, loginLengthError, loginError} = this.state;
         const modal = true;
         let spinner;
 
         loading ? spinner = <Spinner active/> : spinner = <Spinner />;
+
+        if (!auth) {
+            return <Login login={this.login} lengthErr={loginLengthError} loginErr={loginError}/>;
+        }
 
         return (
             <>
@@ -197,12 +252,10 @@ export default class Editor extends Component {
 
                 {spinner}
 
-                <Panel save = {this.save} meta = {this.meta} />
+                <Panel save = {this.save} meta = {this.meta} logout = {this.logout}/>
 
                 <ChooseModal modal={modal} target={'modal-open'} data={pageList} redirect={this.init}/>
                 <ChooseModal modal={modal} target={'modal-backup'} data={backupsList} redirect={this.restoreBackup}/>
-
-
             </>
         )
     }

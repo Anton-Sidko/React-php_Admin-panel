@@ -29,11 +29,19 @@ const Panel = (props) => {
             </button>
 
             <button
-                className="uk-button uk-button-default"
+                className="uk-button uk-button-default uk-margin-small-right"
                 uk-toggle="target: #modal-backup"
                 type="button"
             >
                 Востановить
+            </button>
+
+            <button
+                className="uk-button uk-button-danger"
+                type="button"
+                onClick={() => props.logout()}
+            >
+                Выход
             </button>
         </div>
     )
