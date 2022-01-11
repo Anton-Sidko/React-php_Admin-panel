@@ -2384,6 +2384,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _editor_images_editor_images_js__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ../editor-images/editor-images.js */ "./app/src/components/editor-images/editor-images.js");
 /* harmony import */ var uikit__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! uikit */ "./node_modules/uikit/dist/js/uikit.js");
 /* harmony import */ var uikit__WEBPACK_IMPORTED_MODULE_10___default = /*#__PURE__*/__webpack_require__.n(uikit__WEBPACK_IMPORTED_MODULE_10__);
+/* harmony import */ var _login_login_js__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(/*! ../login/login.js */ "./app/src/components/login/login.js");
+
 
 
 
@@ -2403,7 +2405,10 @@ class Editor extends react__WEBPACK_IMPORTED_MODULE_2__.Component {
       pageList: [],
       backupsList: [],
       newPageName: '',
-      loading: true
+      loading: true,
+      auth: false,
+      loginError: false,
+      loginLengthError: false
     };
     this.save = this.save.bind(this);
     this.meta = this.meta.bind(this);
@@ -2411,10 +2416,51 @@ class Editor extends react__WEBPACK_IMPORTED_MODULE_2__.Component {
     this.isLoaded = this.isLoaded.bind(this);
     this.init = this.init.bind(this);
     this.restoreBackup = this.restoreBackup.bind(this);
+    this.login = this.login.bind(this);
+    this.logout = this.logout.bind(this);
   }
 
   componentDidMount() {
-    this.init(null, this.currentPage);
+    this.checkAuth();
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    if (this.state.auth !== prevState.auth) {
+      this.init(null, this.currentPage);
+    }
+  }
+
+  checkAuth() {
+    axios__WEBPACK_IMPORTED_MODULE_1___default().get("./api/checkAuth.php").then(res => {
+      this.setState({
+        auth: res.data.auth
+      });
+    });
+  }
+
+  login(password) {
+    if (password.length > 7) {
+      axios__WEBPACK_IMPORTED_MODULE_1___default().post("./api/login.php", {
+        "password": password
+      }).then(res => {
+        this.setState({
+          auth: res.data.auth,
+          loginError: !res.data.auth,
+          loginLengthError: false
+        });
+      });
+    } else {
+      this.setState({
+        loginError: false,
+        loginLengthError: true
+      });
+    }
+  }
+
+  logout() {
+    axios__WEBPACK_IMPORTED_MODULE_1___default().get('./api/logout.php').then(() => {
+      window.location.replace('/');
+    });
   }
 
   init(e, page) {
@@ -2422,11 +2468,13 @@ class Editor extends react__WEBPACK_IMPORTED_MODULE_2__.Component {
       e.preventDefault();
     }
 
-    this.isLoading();
-    this.iframe = document.querySelector('iframe');
-    this.open(page, this.isLoaded);
-    this.loadPageList();
-    this.loadBackupsList();
+    if (this.state.auth) {
+      this.isLoading();
+      this.iframe = document.querySelector('iframe');
+      this.open(page, this.isLoaded);
+      this.loadPageList();
+      this.loadBackupsList();
+    }
   }
 
   open(page, cb) {
@@ -2556,13 +2604,25 @@ class Editor extends react__WEBPACK_IMPORTED_MODULE_2__.Component {
     const {
       loading,
       pageList,
-      backupsList
+      backupsList,
+      auth,
+      loginLengthError,
+      loginError
     } = this.state;
     const modal = true;
     let spinner;
     loading ? spinner = /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_2__.createElement(_spinner_spinner__WEBPACK_IMPORTED_MODULE_5__["default"], {
       active: true
     }) : spinner = /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_2__.createElement(_spinner_spinner__WEBPACK_IMPORTED_MODULE_5__["default"], null);
+
+    if (!auth) {
+      return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_2__.createElement(_login_login_js__WEBPACK_IMPORTED_MODULE_11__["default"], {
+        login: this.login,
+        lengthErr: loginLengthError,
+        loginErr: loginError
+      });
+    }
+
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_2__.createElement(react__WEBPACK_IMPORTED_MODULE_2__.Fragment, null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_2__.createElement("iframe", {
       src: "",
       frameBorder: "0"
@@ -2575,7 +2635,8 @@ class Editor extends react__WEBPACK_IMPORTED_MODULE_2__.Component {
       }
     }), spinner, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_2__.createElement(_panel_panel__WEBPACK_IMPORTED_MODULE_6__["default"], {
       save: this.save,
-      meta: this.meta
+      meta: this.meta,
+      logout: this.logout
     }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_2__.createElement(_choose_modal_choose_modal__WEBPACK_IMPORTED_MODULE_7__["default"], {
       modal: modal,
       target: 'modal-open',
@@ -2587,6 +2648,76 @@ class Editor extends react__WEBPACK_IMPORTED_MODULE_2__.Component {
       data: backupsList,
       redirect: this.restoreBackup
     }));
+  }
+
+}
+
+/***/ }),
+
+/***/ "./app/src/components/login/login.js":
+/*!*******************************************!*\
+  !*** ./app/src/components/login/login.js ***!
+  \*******************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (/* binding */ Login)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "./node_modules/react/index.js");
+
+class Login extends react__WEBPACK_IMPORTED_MODULE_0__.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      password: ""
+    };
+  }
+
+  onPasswordChange(e) {
+    this.setState({
+      password: e.target.value
+    });
+  }
+
+  render() {
+    const {
+      password
+    } = this.state;
+    const {
+      login,
+      lengthErr,
+      loginErr
+    } = this.props;
+    let renderLogErr, renderLengthErr;
+    loginErr ? renderLogErr = /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", {
+      className: "login-error"
+    }, "\u0412\u0432\u0435\u0434\u0435\u043D \u043D\u0435\u043F\u0440\u0430\u0432\u0438\u043B\u044C\u043D\u044B\u0439 \u043F\u0430\u0440\u043E\u043B\u044C") : null;
+    lengthErr ? renderLengthErr = /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", {
+      className: "login-error"
+    }, "\u041F\u0430\u0440\u043E\u043B\u044C \u0434\u043E\u043B\u0436\u0435\u043D \u0431\u044B\u0442\u044C \u0434\u043B\u0438\u043D\u043D\u0435\u0435 7 \u0441\u0438\u043C\u0432\u043E\u043B\u043E\u0432") : null;
+    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", {
+      className: "login-container"
+    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", {
+      className: "login"
+    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0__.createElement("h2", {
+      className: "uk-modal-title uk-text-center"
+    }, "\u0410\u0432\u0442\u043E\u0440\u0438\u0437\u0430\u0446\u0438\u044F"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", {
+      className: "uk-margin-top uk-text-lead"
+    }, "\u041F\u0430\u0440\u043E\u043B\u044C"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0__.createElement("input", {
+      type: "password",
+      name: "",
+      id: "",
+      className: "uk-input uk-margin-top",
+      placeholder: "\u041F\u0430\u0440\u043E\u043B\u044C:",
+      value: password,
+      onChange: e => this.onPasswordChange(e)
+    }), renderLogErr, renderLengthErr, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", {
+      className: "uk-button uk-button-primary uk-margin-top",
+      type: "button",
+      onClick: () => login(password)
+    }, "\u0412\u0445\u043E\u0434")));
   }
 
 }
@@ -2624,10 +2755,14 @@ const Panel = props => {
     onClick: () => props.meta() // uk-toggle="target: #modal-open"
 
   }, "\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u041C\u0415\u0422\u0410"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", {
-    className: "uk-button uk-button-default",
+    className: "uk-button uk-button-default uk-margin-small-right",
     "uk-toggle": "target: #modal-backup",
     type: "button"
-  }, "\u0412\u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C"));
+  }, "\u0412\u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", {
+    className: "uk-button uk-button-danger",
+    type: "button",
+    onClick: () => props.logout()
+  }, "\u0412\u044B\u0445\u043E\u0434"));
 };
 
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (Panel);
